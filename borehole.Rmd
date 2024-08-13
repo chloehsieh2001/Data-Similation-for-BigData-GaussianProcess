@@ -1,0 +1,123 @@
+---
+title: "Assignment2"
+author: "Chloe Hsieh"
+date: "2023-05-01"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: '2'
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collasped: false
+      smooth_scroll: false
+---
+
+
+# **Q1**
+
+## **Training data**
+```{r}
+library(hetGP)
+
+set.seed(123)
+#define the Borehole function
+borehole = function(xx){ #  BOREHOLE FUNCTION d=8
+  mini = c(0.05,100,63070,990,63.1,700,1120,9855)
+  maxi = c(0.15,50000,115600,1110,116,820,1680,12045)
+  rw <- mini[1] + xx[1]*(maxi[1] - mini[1])
+  r  <- mini[2] + xx[2]*(maxi[2] - mini[2])
+  Tu <- mini[3] + xx[3]*(maxi[3] - mini[3])
+  Hu <- mini[4] + xx[4]*(maxi[4] - mini[4])
+  Tl <- mini[5] + xx[5]*(maxi[5] - mini[5])
+  Hl <- mini[6] + xx[6]*(maxi[6] - mini[6])
+  L  <- mini[7] + xx[7]*(maxi[7] - mini[7])
+  Kw <- mini[8] + xx[8]*(maxi[8] - mini[8])
+  frac1 <- 2 * pi * Tu * (Hu-Hl)
+  frac2a <- 2*L*Tu / (log(r/rw)*rw^2*Kw)
+  frac2b <- Tu / Tl
+  frac2 <- log(r/rw) * (1+frac2a+frac2b)
+  y <- frac1 / frac2
+  return(y)
+}
+
+#generate training data
+num_train_samples <- 1000
+X_train <- matrix(runif(num_train_samples * 8), ncol = 8)
+y_train <- apply(X_train, 1, borehole)
+sigma <- sqrt(var(y_train) / 5)  # Variance for SNR=5
+error <- rnorm(num_train_samples, mean = 0, sd = sigma)
+y_train <- y_train + error
+
+head(X_train)
+
+#calculate mean of training outputs
+y_train_mean <- mean(y_train)
+
+#fit GP model
+GPmodel <- mleHomGP(X_train, y_train)
+summary(GPmodel)
+
+
+```
+
+We used the hetGP (Heteroskedastic Gaussian Process Modeling and Design under Replication) package's mleHomGP function to fit a GP model. This choice was driven by including a consistent error term (noise) setting in the training data. The model is based on Gaussian process regression under homoskedastic noise, with hyperparameters estimated via maximum likelihood.
+We employs the default Gaussian kernel $c(x, y) = exp(−(x − y)^2/theta)$. 
+We have 1000 unique data points.
+
+The Gaussian covariance lengthscale values $\theta = {\theta_{1},\cdots,\theta_{8}}= \{0.7245832, 3.336997, 3.322085, 3.34413, 3.341974, 2.971995, 3.327023, 3.329708\}$. These lengthscales control the smoothness of the Gaussian process and correspond to the parameters in the borehole function. When transformed back to $\xi$, smaller values indicate that the process varies more rapidly in that dimension. The model's hyperparameters are $\sigma^2 = 1256.758,$ representing the variance or scale of the GP, and $\hat{\beta} = 81.61025$.
+
+
+
+
+## **Testing data**
+```{r}
+set.seed(0)
+# Generate testing dataset
+num_test_samples <- 100000
+X_test <- matrix(runif(num_test_samples * 8), ncol = 8)
+y_test <- apply(X_test, 1, borehole)
+
+head(X_test)
+
+# Predict outputs using the trained GPR model
+y_hat <- predict(x = X_test, object = GPmodel)
+y_pred <- y_hat$mean
+
+# Calculate normalized RMSPE
+# Function to calculate normalized RMSPE
+normalized_rmspe <- function(y_test, y_pred, y_train_mean) {
+  numerator <- sum((y_pred - y_test)^2)
+  denominator <- sum((y_train_mean - y_test)^2)
+  return(sqrt(numerator / denominator))
+}
+
+rmspe <- normalized_rmspe(y_test, y_pred, y_train_mean)
+print(paste("Normalized RMSPE:", rmspe))
+
+
+```
+
+The Normalized RMSPE is 0.116843642288521, indicating a good model performance.
+
+
+## **Plot**
+
+```{r}
+# Create scatter plot
+plot(y_test, y_pred, log = "xy", xlab = "True Values", ylab = "Predictions", main = "Scatter plot of True Values vs Predictions")
+
+# Plot identity line
+abline(0, 1, col = 'blue')
+
+# Set aspect ratio to be equal
+aspect_ratio <- diff(range(y_pred)) / diff(range(y_test))
+asp <- aspect_ratio / par("pin")[2] * par("pin")[1]
+#par(asp = asp)
+
+
+```
+
+The plot shows that the points follow the diagonal line, indicating a good prediction of the fitted GP model.
+
